@@ -42,9 +42,28 @@ class Hive(BaseSQLQueryRunner):
 
     @classmethod
     def configuration_schema(cls):
+        # return {
+        #     "type": "object",
+        #     "properties": {
+        #         "host": {
+        #             "type": "string"
+        #         },
+        #         "port": {
+        #             "type": "number"
+        #         },
+        #         "database": {
+        #             "type": "string"
+        #         },
+        #         "username": {
+        #             "type": "string"
+        #         },
+        #     },
+        #     "order": ["host", "port", "database", "username"],
+        #     "required": ["host"]
+        # }
         return {
-            "type": "object",
-            "properties": {
+        "type": "object",
+        "properties": {
                 "host": {
                     "type": "string"
                 },
@@ -57,9 +76,29 @@ class Hive(BaseSQLQueryRunner):
                 "username": {
                     "type": "string"
                 },
+                "mysql_host": {
+                    "type": "string",
+                },
+                "mysql_port": {
+                    "type": "number",
+                    "default": 3306
+                },
+                "mysql_database": {
+                    "type": "string",
+                    "default": "hive_test"
+                },
+                "mysql_username": {
+                    "type": "string",
+                    "default": "root"
+                },
+                "passwd": {
+                    "type": "string",
+                    "title": "Mysql Password"
+                }
             },
-            "order": ["host", "port", "database", "username"],
-            "required": ["host"]
+        "order": ["host", "port", "database", "username", "mysql_host", "mysql_port", "mysql_database", "mysql_username", "passwd"],
+        "required": ["host", "mysql_host", "mysql_port", "mysql_database", "mysql_username", "passwd"],
+        'secret': ['passwd']
         }
 
     @classmethod
@@ -70,21 +109,66 @@ class Hive(BaseSQLQueryRunner):
     def enabled(cls):
         return enabled
 
+    # def _get_tables(self, schema):
+        # schemas_query = "show schemas"
+
+        # tables_query = "show tables in %s"
+
+        # columns_query = "show columns in %s.%s"
+
+        # for schema_name in filter(lambda a: len(a) > 0, map(lambda a: str(a['database_name']), self._run_query_internal(schemas_query))):
+        #     for table_name in filter(lambda a: len(a) > 0, map(lambda a: str(a['tab_name']), self._run_query_internal(tables_query % schema_name))):
+        #         columns = filter(lambda a: len(a) > 0, map(lambda a: str(a['field']), self._run_query_internal(columns_query % (schema_name, table_name))))
+
+        #         if schema_name != 'default':
+        #             table_name = '{}.{}'.format(schema_name, table_name)
+
+        #         schema[table_name] = {'name': table_name, 'columns': columns}
+        # return schema.values()
+        
     def _get_tables(self, schema):
-        schemas_query = "show schemas"
-
-        tables_query = "show tables in %s"
-
-        columns_query = "show columns in %s.%s"
-
-        for schema_name in filter(lambda a: len(a) > 0, map(lambda a: str(a['database_name']), self._run_query_internal(schemas_query))):
-            for table_name in filter(lambda a: len(a) > 0, map(lambda a: str(a['tab_name']), self._run_query_internal(tables_query % schema_name))):
-                columns = filter(lambda a: len(a) > 0, map(lambda a: str(a['field']), self._run_query_internal(columns_query % (schema_name, table_name))))
-
-                if schema_name != 'default':
-                    table_name = '{}.{}'.format(schema_name, table_name)
-
-                schema[table_name] = {'name': table_name, 'columns': columns}
+        table_list = []
+        tabel_sql = "select tbl_name as table_name from DBS as db inner join TBLS as tbl on db.db_id = tbl.db_id where db.name = '"+self.configuration["database"]+"'"
+        results, error = self._mysql_run(tabel_sql, None)
+        if error is not None:
+            raise Exception("Failed getting schema.")
+        results = json_loads(results)
+        for row in results['rows']:
+            table_list.append(row['table_name'])
+        for table_name in table_list:
+            tabel_sql = """
+                SELECT *
+                FROM
+                (
+                  SELECT col.column_name as column_name,
+                          col.type_name AS column_type,
+                          col.COMMENT AS column_comment
+                   FROM DBS AS db
+                   INNER JOIN TBLS AS tbl ON db.db_id = tbl.db_id
+                   INNER JOIN SDS AS sds ON tbl.sd_id = sds.sd_id
+                   INNER JOIN COLUMNS_V2 AS col ON sds.cd_id = col.cd_id
+                   WHERE db.name = '"""+self.configuration["database"]+"""'
+                     AND tbl_name = '"""+table_name+"""'
+                   UNION ALL 
+                   SELECT pt.PKEY_NAME AS column_name,
+                          pt.PKEY_TYPE AS column_type,
+                          pt.PKEY_COMMENT as column_comment
+                   FROM DBS AS db
+                   INNER JOIN TBLS AS tbl ON db.db_id = tbl.db_id
+                   LEFT JOIN PARTITION_KEYS AS pt ON tbl.tbl_id = pt.tbl_id
+                   WHERE db.name = '"""+self.configuration["database"]+"""'
+                     AND tbl_name = '"""+table_name+"""'
+                ) AS t
+                WHERE t.COLUMN_NAME IS NOT NULL
+            """
+            results, error = self._mysql_run(tabel_sql, None)
+            if error is not None:
+                raise Exception("Failed getting schema.")
+            results = json_loads(results)
+            for row in results['rows']:
+                if table_name not in schema:
+                    schema[table_name] = {'name': table_name, 'columns': []}
+                schema[table_name]['columns'].append(row['column_name'])
         return schema.values()
 
     def _get_connection(self):
