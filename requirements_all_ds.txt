@@ -23,7 +23,7 @@ simple_salesforce==0.72.2
 PyAthena>=1.5.0
 pymapd==0.7.1
 qds-sdk>=1.9.6
-ibm-db>=2.0.9
+#ibm-db>=2.0.9
 pydruid==0.4
 requests_aws_sign==0.1.4
 snowflake_connector_python==1.8.6

@@ -21,8 +21,8 @@ RUN if [ "x$skip_ds_deps" = "x" ] ; then pip install -r requirements_all_ds.txt 
 
 COPY . /app
 COPY --from=frontend-builder /frontend/client/dist /app/client/dist
-RUN chown -R redash /app
-USER redash
+RUN chown -R root /app
+USER root
 
 ENTRYPOINT ["/app/bin/docker-entrypoint"]
 CMD ["server"]
